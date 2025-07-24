@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SecureTalk Chat</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 50px; }
+    #chatBox {
+      border: 1px solid #ccc;
+      padding: 10px;
+      width: 500px;
+      height: 300px;
+      overflow-y: scroll;
+      margin-bottom: 10px;
+      background: #f9f9f9;
+    }
+    #messageInput, #fromInput, #toInput {
+      width: 400px;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+    button { padding: 8px 16px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>SecureTalk Chat</h1>
+
+  <input type="text" id="fromInput" placeholder="Your username" readonly>
+  <input type="text" id="toInput" placeholder="Send to username">
+
+  <div id="chatBox"></div>
+
+  <input type="text" id="messageInput" placeholder="Type a message...">
+  <br>
+  <button id="sendButton">Send</button>
+
+  <br>
+  <button onclick="window.location.href='index.html'">← Back to Login</button>
+
+  <script>
+    let cryptoKey;
+    let iv;
+    let keyReady = false;
+    const chatBox = document.getElementById('chatBox');
+    const localSentMessages = [];
+
+    // Get username from URL parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const username = urlParams.get('username');
+    if (username) {
+      document.getElementById('fromInput').value = username;
+    }
+
+    async function generateKey() {
+      cryptoKey = await window.crypto.subtle.generateKey(
+        { name: "AES-GCM", length: 256 },
+        true,
+        ["encrypt", "decrypt"]
+      );
+      iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const username = document.getElementById('fromInput').value;
+      await exportAndUploadKey(username);
+    }
+
+    async function exportAndUploadKey(username) {
+      const exportedKey = await crypto.subtle.exportKey('jwk', cryptoKey);
+      const exportedKeyStr = btoa(JSON.stringify(exportedKey));
+      const ivStr = btoa(String.fromCharCode(...iv));
+
+      await fetch('/storekey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, key: exportedKeyStr, iv: ivStr })
+      });
+    }
+
+    async function prepareKey() {
+      const username = document.getElementById('fromInput').value.trim();
+      if (!username) return;
+
+      try {
+        const res = await fetch('/getkey', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+
+        if (res.ok) {
+          const { key: keyStr, iv: ivStr } = await res.json();
+          cryptoKey = await crypto.subtle.importKey(
+            'jwk',
+            JSON.parse(atob(keyStr)),
+            { name: 'AES-GCM' },
+            false,
+            ['decrypt']
+          );
+          iv = Uint8Array.from(atob(ivStr), c => c.charCodeAt(0));
+          keyReady = true;
+        } else {
+          // Key 不存在则生成新密钥
+          await generateKey();
+          keyReady = true;
+        }
+      } catch (err) {
+        console.error('prepareKey failed:', err);
+      }
+    }
+
+    async function encryptMessage(message, targetUsername) {
+      const res = await fetch('/getkey', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: targetUsername })
+      });
+
+      if (!res.ok) {
+        throw new Error('Recipient key not ready. Ask them to login first.');
+      }
+
+      const { key: keyStr, iv: ivStr } = await res.json();
+      const importedKey = await crypto.subtle.importKey(
+        'jwk',
+        JSON.parse(atob(keyStr)),
+        { name: 'AES-GCM' },
+        false,
+        ['encrypt']
+      );
+      const iv = Uint8Array.from(atob(ivStr), c => c.charCodeAt(0));
+      const encoded = new TextEncoder().encode(message);
+      const ciphertext = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv },
+        importedKey,
+        encoded
+      );
+      return btoa(String.fromCharCode(...new Uint8Array(ciphertext)));
+    }
+
+    async function decryptMessage(base64Ciphertext) {
+      const ciphertext = Uint8Array.from(atob(base64Ciphertext), c => c.charCodeAt(0));
+      const decrypted = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv },
+        cryptoKey,
+        ciphertext
+      );
+      return new TextDecoder().decode(decrypted);
+    }
+
+    document.getElementById('sendButton').onclick = async () => {
+      const from = document.getElementById('fromInput').value;
+      const to = document.getElementById('toInput').value;
+      const input = document.getElementById('messageInput').value;
+      if (!from || !to || !input) return alert('All fields required');
+
+      if (!keyReady) {
+        alert('Your encryption key is not ready yet. Please wait.');
+        return;
+      }
+
+      let encrypted;
+      try {
+        encrypted = await encryptMessage(input, to);
+      } catch (err) {
+        alert(err.message);
+        return;
+      }
+
+      await fetch('/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, to, encrypted })
+      });
+
+      localSentMessages.push({ from, text: input, timestamp: Date.now() });
+      document.getElementById('messageInput').value = '';
+      fetchMessages();
+    };
+
+    async function fetchMessages() {
+      const to = document.getElementById('fromInput').value;
+      if (!to || !cryptoKey) return;
+      try {
+        const res = await fetch('/receive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: to })
+        });
+        const messages = await res.json();
+        const displayMessages = [];
+
+        for (const msg of messages) {
+          try {
+            const decrypted = await decryptMessage(msg.encrypted);
+            displayMessages.push({ from: msg.from, text: decrypted, timestamp: new Date(msg.timestamp).getTime() });
+          } catch (e) {
+            continue;
+          }
+        }
+
+        for (const msg of localSentMessages) {
+          displayMessages.push({ from: msg.from + ' (you)', text: msg.text, timestamp: msg.timestamp });
+        }
+
+        displayMessages.sort((a, b) => a.timestamp - b.timestamp);
+
+        chatBox.innerHTML = '';
+        for (const msg of displayMessages) {
+          chatBox.innerHTML += `<div><b>${msg.from}:</b> ${msg.text}</div>`;
+        }
+        chatBox.scrollTop = chatBox.scrollHeight;
+      } catch (err) {
+        console.error('Receive failed', err);
+      }
+    }
+
+    // Initialize key immediately if username is present
+    if (username) {
+      prepareKey();
+    }
+
+    fetchMessages();
+    setInterval(fetchMessages, 3000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SecureTalk - Register/Login</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 50px; }
+    form { margin-bottom: 20px; }
+    input { display: block; margin: 10px 0; padding: 8px; width: 250px; }
+    button { padding: 8px 16px; }
+    #response { margin-top: 20px; font-weight: bold; color: green; }
+    #response.error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>SecureTalk</h1>
+
+  <h2>Register</h2>
+  <form id="registerForm">
+    <input type="text" id="regUsername" placeholder="Username" required />
+    <input type="password" id="regPassword" placeholder="Password" required />
+    <button type="submit">Register</button>
+  </form>
+
+  <h2>Login</h2>
+  <form id="loginForm">
+    <input type="text" id="loginUsername" placeholder="Username" required />
+    <input type="password" id="loginPassword" placeholder="Password" required />
+    <button type="submit">Login</button>
+  </form>
+
+  <div id="response"></div>
+
+  <script>
+    /* ---------- helper: SHA‑256 one-liner ---------- */
+  async function preHash(str) {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  const registerForm = document.getElementById('registerForm');
+  const loginForm    = document.getElementById('loginForm');
+  const responseBox  = document.getElementById('response');
+
+  /* ---------- REGISTER ---------- */
+  registerForm.onsubmit = async (e) => {
+    e.preventDefault();
+    responseBox.classList.remove("error");
+
+    const hashed = await preHash(document.getElementById('regPassword').value);
+
+    try {
+      const res = await fetch('/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('regUsername').value,
+          password: hashed                               // ← send hash
+        })
+      });
+      const text = await res.text();
+      if (res.ok) { responseBox.textContent = '✅ ' + text; }
+      else        { responseBox.textContent = '❌ ' + text; responseBox.classList.add("error"); }
+    } catch {
+      responseBox.textContent = '❌ Request failed.'; responseBox.classList.add("error");
+    }
+  };
+
+  /* ---------- LOGIN ---------- */
+  loginForm.onsubmit = async (e) => {
+    e.preventDefault();
+    responseBox.classList.remove("error");
+
+    const hashed = await preHash(document.getElementById('loginPassword').value);
+
+    try {
+      const res = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('loginUsername').value,
+          password: hashed                               // ← send hash
+        })
+      });
+      const text = await res.text();
+      if (res.ok) {
+        responseBox.textContent = '✅ ' + text;
+        const username = document.getElementById('loginUsername').value;
+        setTimeout(() => { window.location.href = `/chat.html?username=${encodeURIComponent(username)}`; }, 1000);
+      } else {
+        responseBox.textContent = '❌ ' + text; responseBox.classList.add("error");
+      }
+    } catch {
+      responseBox.textContent = '❌ Request failed.'; responseBox.classList.add("error");
+    }
+  };
+  </script>
+</body>
+</html>
