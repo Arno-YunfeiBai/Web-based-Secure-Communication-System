@@ -117,15 +117,14 @@ A2: HTTPS protects against MITM and network eavesdropping; E2EE ensures the serv
 ---
 
 ## 8. License
-MIT
----
-
-## 9. TODO / Roadmap
-- 🔐 Dual-factor password-derived key derivation (PBKDF2/Argon2)
-- 📞 WebRTC voice/video call end-to-end encryption
-- 🔑 Automatic key rotation and group chat multi-key management
-- 📦 Docker deployment scripts
+MIT – do anything, but give credit.
 
 ---
+
+### 9. Author
+
+**Yunfei Bai* – Advanced Computing student @ The University of Sydney  
+*Solo development, April – May 2024*
+
 
 **Enjoy secure chatting!** 🔐💬
