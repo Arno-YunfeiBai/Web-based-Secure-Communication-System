@@ -1,11 +1,11 @@
 # SecureTalk – End‑to‑End Encrypted Web Chat
 
-> This is the refined README for my "Encrypted Calling / Encrypted Chat" project. The goal is to help others get started quickly and build on it.
+> This is the refined README for my "Encrypted Chat" project. The goal is to help others get started quickly and build on it.
 
 ---
 
 ## 1. Overview
-SecureTalk is a  **full‑stack, end‑to‑end encrypted (E2EE)** real‑time chat / "encrypted call" platform:
+SecureTalk is a  **full‑stack, end‑to‑end encrypted (E2EE)** real‑time encrypted chat platform:
 - **Transport security**: Site-wide enforced HTTPS (TLS 1.3).
 - **Authentication security**: Passwords are pre‑hashed with SHA‑256 on the client, then stored on the server with bcrypt (12 rounds). The server never sees the plaintext password.
 - **Message E2EE**: The browser generates a 256‑bit AES‑GCM key locally; only ciphertext is stored in the database, so the server cannot read messages.
